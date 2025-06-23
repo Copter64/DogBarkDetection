@@ -1,0 +1,10 @@
+# Requirements for DarkBarkDetection
+opencv-python
+numpy
+scipy
+tensorflow
+keras
+rtsp-simple-server # (for local RTSP proxy if needed)
+librosa
+tf-models-official
+tensorflow-hub

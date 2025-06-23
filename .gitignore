@@ -1,0 +1,50 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*.so
+*.pyd
+*.pyo
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# VS Code settings
+.vscode/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Python egg files
+*.egg-info/
+*.egg
+
+yamnet_class_map.csv
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# Build and dist folders
+build/
+dist/
+
+# Ignore test outputs
+*.out
+
+# Ignore ffmpeg temp files
+ffmpeg_temp_*
+
+# Keep only these for the project:
+# - main.py
+# - requirements.txt
+# - any essential .json config or mapping files
+!main.py
+!requirements.txt
+!*.json

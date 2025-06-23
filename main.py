@@ -5,11 +5,18 @@ import tensorflow_hub as hub
 import urllib.request
 import os
 import ffmpeg
+import wave
 from dotenv import load_dotenv
+import datetime
+from pathlib import Path
 
 # --- LOAD USER CONFIGURATION FROM .env ---
-load_dotenv()
+# Always load .env from the directory where main.py is located
+load_dotenv(dotenv_path=Path(__file__).parent / '.env')
+
 RTSP_URL = os.getenv("RTSP_URL")
+if not RTSP_URL:
+    raise ValueError("RTSP_URL is not set. Please check your .env file.")
 SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", 16000))
 CHUNK_DURATION = int(os.getenv("CHUNK_DURATION", 2))
 CHUNK_SIZE = SAMPLE_RATE * CHUNK_DURATION
@@ -28,34 +35,39 @@ if not os.path.exists(LABELS_PATH):
 with open(LABELS_PATH, 'r') as f:
     class_names = [line.strip().split(',')[2] for line in f.readlines()[1:]]
 
-# Find all class indices that mention 'dog' or 'bark' in their label for later detection
+# Find all class indices for dog barks and human speech
 DOG_BARK_LABELS = [i for i, name in enumerate(class_names) if 'dog' in name.lower() or 'bark' in name.lower()]
+HUMAN_SPEECH_LABELS = [i for i, name in enumerate(class_names) if 'speech' in name.lower() or 'talking' in name.lower() or 'conversation' in name.lower() or 'human voice' in name.lower()]
 
 
-def is_dog_bark(audio_chunk, sr):
+def detect_audio_events(audio_chunk, sr):
     """
-    Run the YAMNet model on an audio chunk and check if a dog bark is detected.
+    Run the YAMNet model on an audio chunk and print detected events (dog bark, human speech).
     Args:
         audio_chunk (np.ndarray): The audio data as a 1D numpy array.
         sr (int): The sample rate of the audio data.
     Returns:
-        bool: True if a dog bark is detected, False otherwise.
+        str: Detected event type ('dog_bark', 'human_speech', or None)
     """
     # YAMNet expects mono, float32, 16kHz audio. Resample if needed.
     if sr != 16000:
         import librosa
         audio_chunk = librosa.resample(audio_chunk, orig_sr=sr, target_sr=16000)
     audio_chunk = audio_chunk.astype('float32')
-    # Run the audio through YAMNet. It returns scores for each class for each frame.
     scores, embeddings, spectrogram = yamnet_model(audio_chunk)
     scores_np = scores.numpy()
-    mean_scores = scores_np.mean(axis=0)  # Average over time
-    # Check if any of the dog bark-related classes have a high enough score
+    mean_scores = scores_np.mean(axis=0)
+    # Check for dog bark
     for idx in DOG_BARK_LABELS:
-        if mean_scores[idx] > 0.1:  # Threshold can be tuned for sensitivity
-            print(f"Detected: {class_names[idx]} (score: {mean_scores[idx]:.2f})")
-            return True
-    return False
+        if mean_scores[idx] > 0.1:
+            print(f"Detected: {class_names[idx]} (score: {mean_scores[idx]:.2f}) [DOG BARK]")
+            return 'dog_bark'
+    # Check for human speech
+    # for idx in HUMAN_SPEECH_LABELS:
+    #     if mean_scores[idx] > 0.1:
+    #         print(f"Detected: {class_names[idx]} (score: {mean_scores[idx]:.2f}) [HUMAN SPEECH]")
+    #         return 'human_speech'
+    return None
 
 # --- AUDIO CAPTURE FROM RTSP ---
 def rtsp_audio_stream_worker(audio_queue):
@@ -89,23 +101,46 @@ def rtsp_audio_stream_worker(audio_queue):
         process.stdout.close()
         process.wait()
 
+# Directory to save dog bark audio clips
+RECORDINGS_DIR = "dog_bark_recordings"
+os.makedirs(RECORDINGS_DIR, exist_ok=True)
+
+def save_audio_clip(audio_chunk, sample_rate):
+    """
+    Save a numpy float32 audio chunk as a WAV file in the recordings directory.
+    Args:
+        audio_chunk (np.ndarray): The audio data as a 1D numpy array.
+        sample_rate (int): The sample rate of the audio data.
+    """
+    # Use current date and time for the filename
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_path = os.path.join(RECORDINGS_DIR, f"dog_bark_{timestamp}.wav")
+    # Convert float32 [-1, 1] to int16 for WAV
+    audio_int16 = np.int16(np.clip(audio_chunk, -1, 1) * 32767)
+    with wave.open(file_path, 'wb') as wf:
+        wf.setnchannels(1)
+        wf.setsampwidth(2)  # 2 bytes for int16
+        wf.setframerate(sample_rate)
+        wf.writeframes(audio_int16.tobytes())
+    print(f"Saved dog bark audio clip: {file_path}")
+
 # --- MAIN DETECTION LOOP ---
 def main():
     """
-    Main loop: starts the audio extraction thread and runs dog bark detection on each audio chunk.
+    Main loop: starts the audio extraction thread and runs audio event detection on each audio chunk.
     """
     audio_queue = queue.Queue()  # Thread-safe queue for audio data
     # Start the audio extraction worker in a background thread
     threading.Thread(target=rtsp_audio_stream_worker, args=(audio_queue,), daemon=True).start()
-    print("Dog bark detection started.")
+    print("Dog bark and human speech detection started.")
     while True:
         # Wait for the next audio chunk from the queue
         audio_chunk = audio_queue.get()
         # Run the detection function
-        if is_dog_bark(audio_chunk, SAMPLE_RATE):
-            print("Dog bark detected!")
-        else:
-            print("No bark detected in this chunk.")
+        event = detect_audio_events(audio_chunk, SAMPLE_RATE)
+        if event == 'dog_bark':
+            save_audio_clip(audio_chunk, SAMPLE_RATE)
+        # You can add more actions for 'human_speech' if desired
 
 if __name__ == "__main__":
     main()

@@ -41,6 +41,10 @@ dist/
 # Ignore ffmpeg temp files
 ffmpeg_temp_*
 
+# Ignore user secrets and environment config
+.env
+.env.*
+
 # Keep only these for the project:
 # - main.py
 # - requirements.txt

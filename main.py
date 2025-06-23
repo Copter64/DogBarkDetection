@@ -5,11 +5,13 @@ import tensorflow_hub as hub
 import urllib.request
 import os
 import ffmpeg
+from dotenv import load_dotenv
 
-# --- CONFIGURATION ---
-RTSP_URL = "rtsps://192.168.1.1:7441/NdxUfStiepLl5Dvo?enableSrtp"
-SAMPLE_RATE = 16000
-CHUNK_DURATION = 2  # seconds
+# --- LOAD USER CONFIGURATION FROM .env ---
+load_dotenv()
+RTSP_URL = os.getenv("RTSP_URL")
+SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", 16000))
+CHUNK_DURATION = int(os.getenv("CHUNK_DURATION", 2))
 CHUNK_SIZE = SAMPLE_RATE * CHUNK_DURATION
 
 # --- YAMNet Setup ---

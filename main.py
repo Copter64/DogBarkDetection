@@ -9,6 +9,8 @@ import wave
 from dotenv import load_dotenv
 import datetime
 from pathlib import Path
+from keras.models import load_model
+import librosa
 
 # --- LOAD USER CONFIGURATION FROM .env ---
 # Always load .env from the directory where main.py is located
@@ -124,6 +126,28 @@ def save_audio_clip(audio_chunk, sample_rate):
         wf.writeframes(audio_int16.tobytes())
     print(f"Saved dog bark audio clip: {file_path}")
 
+# --- Load custom Scotty breed model ---
+SCOTTY_MODEL_PATH = os.path.join('models', 'audio_model.h5')
+scotty_model = load_model(SCOTTY_MODEL_PATH)
+
+# Helper: Extract MFCCs for custom model (expects 13 MFCCs, 2s audio at 16kHz)
+def extract_mfcc(audio_chunk, sr=16000, n_mfcc=13):
+    mfcc = librosa.feature.mfcc(y=audio_chunk, sr=sr, n_mfcc=n_mfcc)
+    mfcc_mean = np.mean(mfcc, axis=1)
+    return mfcc_mean
+
+# --- Detect if Scotty breed is present ---
+def detect_scotty(audio_chunk, sr=16000):
+    mfcc_features = extract_mfcc(audio_chunk, sr)
+    mfcc_features = mfcc_features.reshape(1, -1)  # Model expects shape (1, 13)
+    pred = scotty_model.predict(mfcc_features)
+    # Assuming output: [not_scotty, scotty], softmax
+    scotty_prob = pred[0][1]
+    if scotty_prob > 0.7:
+        print(f"Scotty breed detected! (probability: {scotty_prob:.2f})")
+        return True
+    return False
+
 # --- MAIN DETECTION LOOP ---
 def main():
     """
@@ -140,6 +164,9 @@ def main():
         event = detect_audio_events(audio_chunk, SAMPLE_RATE)
         if event == 'dog_bark':
             save_audio_clip(audio_chunk, SAMPLE_RATE)
+            print("Dog bark detected! Audio clip saved.")
+            # --- Scotty breed detection ---
+            detect_scotty(audio_chunk, SAMPLE_RATE)
         # You can add more actions for 'human_speech' if desired
 
 if __name__ == "__main__":

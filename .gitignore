@@ -43,7 +43,6 @@ ffmpeg_temp_*
 
 # Ignore user secrets and environment config
 .env
-.env.*
 
 # Keep only these for the project:
 # - main.py
@@ -52,3 +51,5 @@ ffmpeg_temp_*
 !main.py
 !requirements.txt
 !*.json
+
+dog_bark_recordings/

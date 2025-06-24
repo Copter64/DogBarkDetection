@@ -11,6 +11,7 @@ import datetime
 from pathlib import Path
 from keras.models import load_model
 import librosa
+import requests
 
 # --- LOAD USER CONFIGURATION FROM .env ---
 # Always load .env from the directory where main.py is located
@@ -127,7 +128,7 @@ def save_audio_clip(audio_chunk, sample_rate):
     print(f"Saved dog bark audio clip: {file_path}")
 
 # --- Load custom Scotty breed model ---
-SCOTTY_MODEL_PATH = os.path.join('models', 'audio_model.h5')
+SCOTTY_MODEL_PATH = os.path.join('models', 'breeds_v1.h5')
 scotty_model = load_model(SCOTTY_MODEL_PATH)
 
 # Helper: Extract MFCCs for custom model (expects 13 MFCCs, 2s audio at 16kHz)
@@ -141,12 +142,46 @@ def detect_scotty(audio_chunk, sr=16000):
     mfcc_features = extract_mfcc(audio_chunk, sr)
     mfcc_features = mfcc_features.reshape(1, -1)  # Model expects shape (1, 13)
     pred = scotty_model.predict(mfcc_features)
-    # Assuming output: [not_scotty, scotty], softmax
     scotty_prob = pred[0][1]
-    if scotty_prob > 0.7:
-        print(f"Scotty breed detected! (probability: {scotty_prob:.2f})")
-        return True
-    return False
+    print(f"Scotty breed probability: {scotty_prob:.2f}")
+    return scotty_prob
+
+def detect_breeds(audio_chunk, sr=16000):
+    mfcc_features = extract_mfcc(audio_chunk, sr)
+    mfcc_features = mfcc_features.reshape(1, -1)
+    pred = scotty_model.predict(mfcc_features)[0]
+    # If you have breed names, list them here in order:
+    breed_names = [
+        'not_scotty',
+        'scotty',
+        'poodle',
+        # Add more breed names here if your model supports more classes
+    ]
+    print("Breed probabilities:")
+    for i, prob in enumerate(pred):
+        breed = breed_names[i] if i < len(breed_names) else f"class_{i}"
+        print(f"  {breed}: {prob:.2f}")
+    return dict(zip(breed_names, pred))
+
+def send_discord_message(message):
+    """
+    Send a message to a Discord channel using a webhook URL from the .env file.
+    Args:
+        message (str): The message to send to Discord.
+    """
+    webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
+    if not webhook_url:
+        print("DISCORD_WEBHOOK_URL is not set in .env.")
+        return
+    data = {"content": message}
+    try:
+        response = requests.post(webhook_url, json=data)
+        if response.status_code == 204:
+            print("Message sent to Discord successfully.")
+        else:
+            print(f"Failed to send message to Discord: {response.status_code} {response.text}")
+    except Exception as e:
+        print(f"Error sending message to Discord: {e}")
 
 # --- MAIN DETECTION LOOP ---
 def main():
@@ -164,9 +199,20 @@ def main():
         event = detect_audio_events(audio_chunk, SAMPLE_RATE)
         if event == 'dog_bark':
             save_audio_clip(audio_chunk, SAMPLE_RATE)
-            print("Dog bark detected! Audio clip saved.")
-            # --- Scotty breed detection ---
-            detect_scotty(audio_chunk, SAMPLE_RATE)
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            breed_probs = detect_breeds(audio_chunk, SAMPLE_RATE)
+            scotty_prob = breed_probs.get('scotty', 0.0)
+            # --- Send detailed message to Discord ---
+            msg = (
+                f"🐶 **Dog Bark Detected!**\n"
+                f"Time: {timestamp}\n"
+                f"Dog bark audio clip saved.\n"
+                f"Breed probabilities:\n" +
+                "\n".join([f"- {k}: {v:.2f}" for k, v in breed_probs.items()])
+            )
+            if scotty_prob > 0.5:
+                msg += "\n:scotland: **Scotty breed detected!**"
+            send_discord_message(msg)
         # You can add more actions for 'human_speech' if desired
 
 if __name__ == "__main__":
